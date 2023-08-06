@@ -4,16 +4,26 @@ Two main principles:
     2. unconnect pins treats as IOs
 """
 import dataclasses
+from typing import Iterator, Union, Optional, Dict
 
 INPUT = 0
 OUTPUT = 1
 INOUT = 2
 
+
 @dataclasses.dataclass
-class VestVerilogPort:
+class VestVerilogNet:
     name: str
+    dataType: str = "wire"
+
+
+@dataclasses.dataclass
+class VestVerilogPort(VestVerilogNet):
+    # name: str
+    # dataType: str
     direction: int
-    dataType: str
+    net: Optional[Union[str, VestVerilogNet]] = None
+    parent: "VestVerilogModule"
 
     @staticmethod
     def translate_direction(direction):
@@ -28,16 +38,75 @@ class VestVerilogPort:
 
 
 @dataclasses.dataclass
+class VestVerilogPin(VestVerilogPort):
+    # net: Union[str, VestVerilogNet] = ""
+    parent: "VestVerilogInstance"
+
+
+@dataclasses.dataclass
+class NewNet(VestVerilogNet):
+    ...
+
+
+@dataclasses.dataclass
+class NewPort(VestVerilogPort):
+    ...
+
+
+class UNCONNECTED:
+    ...
+
+
+class TIE:
+    ...
+
+
 class VestVerilogModule:
     instanceCounts = 0
     instances = []
+
+    def __init__(self, moduleName) -> None:
+        self.name = moduleName
+        ...
+
+    def create_inst(self, module: "VestVerilogModule" = None) -> "VestVerilogInstance":
+        module.instanceCounts += 1
+        inst = VestVerilogInstance(module)
+        self.instances.append(inst)
+        return inst
+
+    def connect(self, *args, **kwargs):
+        pass
+
+    def iter_ports(self, pattern=".*") -> Iterator[VestVerilogPort]:
+        pass
+
+    ...
+
+
+class VestVerilogInstance:
+    def __init__(self, module: VestVerilogModule, parent: VestVerilogModule) -> None:
+        self.module = module
+        self.parent = parent
+        self.pins: Dict[str, VestVerilogPin] = {}
+
+        self._extract_pins()
+
+    def _extract_pins(self):
+        """
+        create pins from the module after being initiaitated
+        """
+        for port in self.module.iter_ports():
+            attr = dataclasses.asdict(port)
+            attr.update(dict(parent=self))
+            self.pins[port.name] = VestVerilogPin(**attr)
 
     def __getitem__(self, index):
         """
         Let user could get attribute using: obj[index]
         """
         return index
-    
+
     def __setitem__(self, index, value):
         """
         Let user could set attribute using: obj[index] = value
@@ -46,9 +115,9 @@ class VestVerilogModule:
 
     def __getattr__(self, name):
         """
-        Let user could get attribute using: obj.name 
+        Let user could get attribute using: obj.name
         """
-        return name
+        return self.pins[name]
 
     def __setattr__(self, name, value):
         """
@@ -56,25 +125,6 @@ class VestVerilogModule:
         """
         print(name, value)
 
-    def create_inst(self, module: "VestVerilogModule"=None):
-        module.instanceCounts += 1
-        inst = VestVerilogInstance(module)
-        self.instances.append(inst)
-        return inst
-    
-    def connect(self, *args, **kwargs):
-        pass
-    
-    ...
-
-class VestVerilogInstance:
-    ...
-
-class UNCONNECTED:
-    ...
-
-class TIE:
-    ...
 
 if 0:
     top = VestVerilogModule("top")
@@ -94,9 +144,22 @@ if 0:
     x0 = top.create_inst(x0)
 
     top.connect(i0.arvalid_o, i1.xx_arvalid_i, x0.mon_arvalid_i, net="xx_mon_arvalid")
-    top.connect(i0.clk_i, i1.xx_clk_i, x0.clk_i, new_port="sclk_gated",)
-    top.connect("hreset_b_sync_sclk_gated", i0.reset_b_i, i1.xx_clk_i, x0.hresetb, new_port=True)
-    top.connect("xreset_b_sync_sclk_gated", i0.xreset_b_i, i1.xreset_i, x0.xresetb, new_port=True)
+    top.connect(
+        i0.clk_i,
+        i1.xx_clk_i,
+        x0.clk_i,
+        new_port="sclk_gated",
+    )
+    top.connect(
+        "hreset_b_sync_sclk_gated", i0.reset_b_i, i1.xx_clk_i, x0.hresetb, new_port=True
+    )
+    top.connect(
+        "xreset_b_sync_sclk_gated",
+        i0.xreset_b_i,
+        i1.xreset_i,
+        x0.xresetb,
+        new_port=True,
+    )
 
     i0.arcache_o = UNCONNECTED()
     UNCONNECTED(i0.awache_o)
